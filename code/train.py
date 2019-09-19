@@ -9,7 +9,8 @@ import numpy as np
 
 import torch
 import torchtext
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
+from tensorboardX import SummaryWriter
 # from tensorboardX import SummaryWriter
 from nltk import word_tokenize
 import nltk
