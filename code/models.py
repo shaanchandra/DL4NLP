@@ -9,6 +9,7 @@ from torch.nn.utils.rnn import pad_packed_sequence, pack_padded_sequence
 import warnings
 warnings.filterwarnings("ignore")
 import torch.nn.functional as F
+from torch.distributions import normal
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -151,11 +152,12 @@ class Doc_Classifier(nn.Module):
         self.drop = nn.Dropout(config['dropout'])
 
     def forward(self, inp, lens):
-        if not self.model_name == 'bilstm_reg' and not self.model_name == 'han':
+        if not self.model_name == 'bilstm_reg' and not self.model_name == 'han' and not self.model_name == 'HAN_SOLO':
             inp = self.embedding(inp)
             out = self.encoder(inp, lens)
             out = self.classifier(out)
         else:
+            # print("actual actual start", inp.size())
             out = self.encoder(inp, self.embedding, lens)
             out = self.drop(out.to(device))
             out = self.classifier(out)
@@ -281,11 +283,13 @@ class HAN_main(nn.Module):
 
 
     def forward(self, inp, embedding, length):
+        # print(inp.size())
         inp = inp.permute(1,2,0)
         # print(inp.shape)
         num_sents = inp.size(0)
         sent_representations = None
         for i in range(num_sents):
+            # print(inp[i, :].size())
             word_attn_outs = self.word_attn(inp[i, :], embedding)
             if sent_representations is None:
                 sent_representations = word_attn_outs
@@ -311,6 +315,7 @@ class HAN_word_attention(nn.Module):
     def forward(self, inp, embedding):
         # print(inp.shape)
         inp = embedding(inp)
+        # print("inside forward word: ", inp.size())
         # print(inp.shape)
         all_states_words, _ = self.gru(inp)
         # print(all_states_words.shape)
@@ -342,7 +347,7 @@ class HAN_sentence_attention(nn.Module):
         self.attn_wts = nn.Softmax()
 
 
-    def forward(self, inp):
+    def forward(self, inp): 
 
         all_states_sents,_ = self.gru(inp)
         out = self.lin_projection((all_states_sents))
@@ -392,38 +397,54 @@ class HAN_SOLO(nn.Module):
         self.embed_size = embed_size
         self.gru_hidden_size = gru_hidden_size
 
+        random_dist = normal.Normal(0, 0.01)
+
         # word gru
         self.biGRU_word = nn.GRU(embed_size, gru_hidden_size, bidirectional=True)
         # word attention
         self.linear_word = nn.Linear(gru_hidden_size * 2, gru_hidden_size * 2)
         self.tanh_word = nn.Tanh()
-        self.context_word = nn.Parameter(gru_hidden_size * 2, 1)
+        self.context_word = nn.Parameter(random_dist.sample((gru_hidden_size * 2, 1)))
         self.softmax_word = nn.Softmax()
         # sentence gru
         self.biGRU_sent = nn.GRU(embed_size, gru_hidden_size, bidirectional=True)
         # sentence attention
         self.linear_sentence = nn.Linear(gru_hidden_size * 2, gru_hidden_size * 2)
         self.tanh_sentence = nn.Tanh()
-        self.context_sentence = nn.Parameter(gru_hidden_size * 2, 1)
+        self.context_sentence = nn.Parameter(random_dist.sample((gru_hidden_size * 2, 1)))
         self.softmax_sentence = nn.Softmax()
 
-    def forward(self, x):
+    def forward(self, x_onehot, embedding, lens): # x : B x S x W x E(=300)
 
-        # word gru
-        f_output_word, h_output_word = self.biGRU_word(x)
-        # word attention
-        word_lin_out = self.linear_word(f_output_word)
-        word_tanh_out = self.tanh_word(word_lin_out)
-        softmax_input_word = torch.mm(word_tanh_out, self.context_word)
-        alpha_word = self.softmax_word(softmax_input_word)
-        S = torch.dot(alpha_word, f_output_word) # it might be a *
-        # sentence gru
-        f_output_sentence, h_output_sentence = self.biGRU_sent(S)
-        # sentence attention
-        sentence_lin_out = self.linear_sentence(f_output_sentence)
-        sentence_tanh_out = self.tanh_sentence(sentence_lin_out)
-        softmax_input_sentence = torch.mm(sentence_tanh_out, self.context_sentence)
-        alpha_sentence = self.softmax_sentence(softmax_input_sentence)
-        V = torch.dot(alpha_sentence, f_output_sentence)  # it might be a *
+        # for every sentence:
+        for sentence in range(x_onehot.size(1)):
+
+            # print(x_onehot[:, sentence, :].size())
+            sent_batch = x_onehot[:, sentence, :]
+            x = embedding(sent_batch.permute(1, 0))
+            print(sent_batch.size())
+            print(x.size())
+            
+            
+            f_output_word, h_output_word = self.biGRU_word(x)
+
+            print(f_output_word.size())
+            # word attention
+            word_lin_out = self.linear_word(f_output_word)
+            word_tanh_out = self.tanh_word(word_lin_out)
+            # print(word_tanh_out.size(), self.context_word.size())
+            print(word_tanh_out.size(), self.context_word.size())
+            softmax_input_word = torch.matmul(word_tanh_out, self.context_word)
+            alpha_word = self.softmax_word(softmax_input_word)
+            print(alpha_word.size(), f_output_word.size())
+            S = torch.matmul(alpha_word, f_output_word) # it might be a *
+            # sentence gru
+            f_output_sentence, h_output_sentence = self.biGRU_sent(S)
+            # sentence attention
+            sentence_lin_out = self.linear_sentence(f_output_sentence)
+            sentence_tanh_out = self.tanh_sentence(sentence_lin_out)
+            softmax_input_sentence = torch.mm(sentence_tanh_out, self.context_sentence)
+            alpha_sentence = self.softmax_sentence(softmax_input_sentence)
+            V = torch.dot(alpha_sentence, f_output_sentence)  # it might be a *
 
         return V

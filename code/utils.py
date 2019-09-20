@@ -28,7 +28,7 @@ def prepare_training(config, classes):
     print("="*80 + "\n\t\t\t\t Preparing Data\n" + "="*80)
     start = time.time()
 
-    if config['model_name'] == 'han':
+    if config['model_name'] == 'han' or config['model_name'] == 'HAN_SOLO':
         TEXT, LABEL, train_batch_loader, dev_batch_loader, test_batch_loader = Reuters_HAN.main_handler(config, config['reuters_path'], shuffle=True)
     else:
         TEXT, LABEL, train_batch_loader, dev_batch_loader, test_batch_loader = Reuters.main_handler(config, config['reuters_path'], shuffle=True)

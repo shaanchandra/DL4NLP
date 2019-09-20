@@ -115,7 +115,10 @@ def train_network():
             model.train()
             # print("batch  = ", batch.text[0])
             # lr_scheduler.step()
+            
+            # print(f"Actual input {batch.text[0].to(device).size()}")
             preds = model(batch.text[0].to(device), batch.text[1].to(device))
+
             loss = F.binary_cross_entropy_with_logits(preds, batch.label.float())
 
             optimizer.zero_grad()
@@ -311,7 +314,7 @@ if __name__ == '__main__':
         os.makedirs(model_path)
     else:
         print("\nModel save path checked..")
-    if config['model_name'] not in ['bilstm', 'bilstm_pool', 'bilstm_reg', 'han', 'cnn']:
+    if config['model_name'] not in ['bilstm', 'bilstm_pool', 'bilstm_reg', 'han', 'cnn', 'HAN_SOLO']:
         raise ValueError("[!] ERROR:  model_name is incorrect. Choose one of - bilstm / bilstm_pool / bilstm_reg / han / cnn")
     else:
         print("\nModel name checked...")
