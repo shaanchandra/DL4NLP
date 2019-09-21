@@ -25,6 +25,7 @@ from sklearn.metrics import accuracy_score
 from data_utils import *
 from models import *
 from utils import *
+from tqdm import tqdm
 
 
 
@@ -110,9 +111,9 @@ def train_network():
     print("\nBeginning training at:  {} \n".format(datetime.datetime.now()))
     for epoch in range(start_epoch, config['max_epoch']+1):
         model.train()
-
-        for iters, batch in enumerate(train_loader):
+        for iters, batch in enumerate(tqdm(train_loader)):
             model.train()
+            # print("Iteration")
             # print("batch  = ", batch.text[0])
             # lr_scheduler.step()
             

@@ -407,7 +407,7 @@ class HAN_SOLO(nn.Module):
         self.context_word = nn.Parameter(random_dist.sample((gru_hidden_size * 2, 1)))
         self.softmax_word = nn.Softmax()
         # sentence gru
-        self.biGRU_sent = nn.GRU(embed_size, gru_hidden_size, bidirectional=True)
+        self.biGRU_sent = nn.GRU(gru_hidden_size * 2, gru_hidden_size, bidirectional=True)
         # sentence attention
         self.linear_sentence = nn.Linear(gru_hidden_size * 2, gru_hidden_size * 2)
         self.tanh_sentence = nn.Tanh()
@@ -416,35 +416,54 @@ class HAN_SOLO(nn.Module):
 
     def forward(self, x_onehot, embedding, lens): # x : B x S x W x E(=300)
 
+        # print("Input to forward:", x_onehot.size())
+
         # for every sentence:
+        document_tensor = []
         for sentence in range(x_onehot.size(1)):
 
             # print(x_onehot[:, sentence, :].size())
             sent_batch = x_onehot[:, sentence, :]
             x = embedding(sent_batch.permute(1, 0))
-            print(sent_batch.size())
-            print(x.size())
+            # print(sent_batch.size())
+            # print(x.size())
             
             
             f_output_word, h_output_word = self.biGRU_word(x)
 
-            print(f_output_word.size())
+            # print(f_output_word.size())
             # word attention
             word_lin_out = self.linear_word(f_output_word)
             word_tanh_out = self.tanh_word(word_lin_out)
             # print(word_tanh_out.size(), self.context_word.size())
-            print(word_tanh_out.size(), self.context_word.size())
+            # print(word_tanh_out.size(), self.context_word.size())
             softmax_input_word = torch.matmul(word_tanh_out, self.context_word)
             alpha_word = self.softmax_word(softmax_input_word)
-            print(alpha_word.size(), f_output_word.size())
-            S = torch.matmul(alpha_word, f_output_word) # it might be a *
-            # sentence gru
-            f_output_sentence, h_output_sentence = self.biGRU_sent(S)
-            # sentence attention
-            sentence_lin_out = self.linear_sentence(f_output_sentence)
-            sentence_tanh_out = self.tanh_sentence(sentence_lin_out)
-            softmax_input_sentence = torch.mm(sentence_tanh_out, self.context_sentence)
-            alpha_sentence = self.softmax_sentence(softmax_input_sentence)
-            V = torch.dot(alpha_sentence, f_output_sentence)  # it might be a *
+            # print(alpha_word.size(), f_output_word.size())
+            elementMul = torch.mul(alpha_word, f_output_word) # it might be a *
+            # print(elementMul.size())
+
+            # Sum across sentence dimension
+            S = elementMul.sum(0)
+            # print(S.size())
+            document_tensor.append(S)
+
+        document_tensor = torch.stack(document_tensor)
+        # print("doc tensor? :", document_tensor.size())
+
+
+        # sentence gru
+        f_output_sentence, h_output_sentence = self.biGRU_sent(document_tensor)
+        # sentence attention
+        sentence_lin_out = self.linear_sentence(f_output_sentence)
+        sentence_tanh_out = self.tanh_sentence(sentence_lin_out)
+        softmax_input_sentence = torch.matmul(sentence_tanh_out, self.context_sentence)
+        alpha_sentence = self.softmax_sentence(softmax_input_sentence)
+
+        elementMulSent = torch.mul(alpha_sentence, f_output_sentence)
+
+        V = elementMulSent.sum(0)  # it might be a *
+
+        # print(f"Weights: {self.context_sentence.data}")
 
         return V
